@@ -10,3 +10,12 @@
 @media (max-width: 760px) {
   .tabs { justify-content: flex-start; }
 }
+
+.filter-section { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
+.filter-label { color: #8a967e; font-size: 11px; white-space: nowrap; }
+.filter-section .tabs { flex: 1; min-width: 0; }
+.plan-filter-section { flex-basis: 100%; }
+.plan-filter-section .tabs { flex: 0 1 auto; }
+@media (max-width: 760px) {
+  .filter-section { width: 100%; }
+}

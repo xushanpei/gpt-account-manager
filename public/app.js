@@ -2,9 +2,12 @@ const $ = selector => document.querySelector(selector);
 let state = { accounts: [], queue: { jobs: [], running: false } };
 const selected = new Set();
 let filter = 'all';
+let planFilter = 'all';
 let toastTimer;
 let excelExporting = false;
 const statuses = { pending: '未授权', needs_auth: '需要重新授权', authorizing: '授权处理中', ready: '会话就绪', error: '连接异常' };
+const planLabels = new Map([['free', 'Free'], ['plus', 'Plus'], ['pro', 'Pro'], ['team', 'Team'], ['business', 'Business'], ['enterprise', 'Enterprise'], ['edu', 'Edu'], ['unknown', '未知']]);
+function accountPlan(account) { return String(account.plan ?? '').trim().toLowerCase() || 'unknown'; }
 const phoneLabels = { verified: '已验证', unverified: '未验证', bound: '已关联', unknown: '未知' };
 function escape(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
@@ -18,7 +21,8 @@ function visibleAccounts() {
   const search = $('#search').value.trim().toLowerCase();
   return state.accounts.filter(account => {
     const matches = filter === 'all' || account.status === filter;
-    return matches && account.email.includes(search);
+    const matchesPlan = planFilter === 'all' || accountPlan(account) === planFilter;
+    return matches && matchesPlan && account.email.includes(search);
   });
 }
 function render() {
@@ -35,12 +39,29 @@ function render() {
   const visibleIds = new Set(visible.map(account => account.id));
   const hiddenSelected = accounts.filter(account => selected.has(account.id) && !visibleIds.has(account.id)).length;
   $('#selection-text').textContent = `已选择 ${selected.size} 个账号${hiddenSelected ? `（含 ${hiddenSelected} 个筛选外账号）` : ''}`;
-  for (const button of document.querySelectorAll('.tabs button')) {
+  for (const button of document.querySelectorAll('#status-filters button')) {
     const value = button.dataset.filter;
     const count = value === 'all' ? accounts.length : accounts.filter(account => account.status === value).length;
     button.querySelector('.filter-count').textContent = count;
     button.classList.toggle('selected', value === filter);
     button.setAttribute('aria-pressed', String(value === filter));
+  }
+  const planCounts = new Map([...planLabels.keys()].map(plan => [plan, 0]));
+  for (const account of accounts) {
+    const plan = accountPlan(account);
+    planCounts.set(plan, (planCounts.get(plan) || 0) + 1);
+  }
+  if (planFilter !== 'all' && !planCounts.has(planFilter)) planCounts.set(planFilter, 0);
+  const planOptions = ['all', ...planCounts.keys()];
+  const existingPlans = [...document.querySelectorAll('#plan-filters button')].map(button => button.dataset.plan);
+  if (JSON.stringify(existingPlans) !== JSON.stringify(planOptions)) {
+    $('#plan-filters').innerHTML = planOptions.map(plan => `<button type="button" data-plan="${escape(plan)}" aria-pressed="false"><span>${escape(plan === 'all' ? '全部套餐' : planLabels.get(plan) || plan)}</span><span class="filter-count">0</span></button>`).join('');
+  }
+  for (const button of document.querySelectorAll('#plan-filters button')) {
+    const plan = button.dataset.plan;
+    button.querySelector('.filter-count').textContent = plan === 'all' ? accounts.length : planCounts.get(plan);
+    button.classList.toggle('selected', plan === planFilter);
+    button.setAttribute('aria-pressed', String(plan === planFilter));
   }
   $('#table-count').textContent = `显示 ${visible.length} / ${accounts.length} 个账号`;
   $('#select-all').checked = visible.length > 0 && visible.every(account => selected.has(account.id));
@@ -48,7 +69,7 @@ function render() {
   $('#empty').hidden = Boolean(visible.length);
   if (!visible.length && accounts.length) {
     $('#empty h3').textContent = '没有匹配的账号';
-    $('#empty p').textContent = '试试其他状态筛选或邮箱关键词。';
+    $('#empty p').textContent = '试试其他状态、套餐或邮箱关键词。';
     $('#empty-import').hidden = true;
     $('#empty small').hidden = true;
   } else {
@@ -57,7 +78,7 @@ function render() {
     $('#empty-import').hidden = false;
     $('#empty small').hidden = false;
   }
-  $('#account-rows').innerHTML = visible.map(account => `<tr><td><input type="checkbox" data-id="${account.id}" ${selected.has(account.id) ? 'checked' : ''} aria-label="选择 ${escape(account.email)}"></td><td class="email">${escape(account.email)}</td><td title="${escape(account.message)}"><span class="badge ${escape(account.status)}"><span>●</span>${escape(statuses[account.status] || account.status)}</span></td><td><span class="plan">${account.plan === 'unknown' ? '未知' : escape(account.plan)}</span></td><td class="${account.has2fa ? 'twofa' : 'muted'}">${account.has2fa ? '✓ 已配置' : '—'}</td><td title="${escape(account.phone?.message || '尚未查询手机信息')}"><span class="${['verified', 'bound'].includes(account.phone?.status) ? 'twofa' : 'muted'}">${phoneLabels[account.phone?.status] || '未知'}</span></td><td>${account.checkedAt ? new Date(account.checkedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td><td><div class="row-actions"><button data-action="authorize" data-id="${account.id}" ${state.queue.running ? 'disabled' : ''}>授权 ↗</button><button data-action="detail" data-id="${account.id}">详情</button></div></td></tr>`).join('');
+  $('#account-rows').innerHTML = visible.map(account => `<tr><td><input type="checkbox" data-id="${account.id}" ${selected.has(account.id) ? 'checked' : ''} aria-label="选择 ${escape(account.email)}"></td><td class="email">${escape(account.email)}</td><td title="${escape(account.message)}"><span class="badge ${escape(account.status)}"><span>●</span>${escape(statuses[account.status] || account.status)}</span></td><td><span class="plan">${escape(planLabels.get(accountPlan(account)) || accountPlan(account))}</span></td><td class="${account.has2fa ? 'twofa' : 'muted'}">${account.has2fa ? '✓ 已配置' : '—'}</td><td title="${escape(account.phone?.message || '尚未查询手机信息')}"><span class="${['verified', 'bound'].includes(account.phone?.status) ? 'twofa' : 'muted'}">${phoneLabels[account.phone?.status] || '未知'}</span></td><td>${account.checkedAt ? new Date(account.checkedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td><td><div class="row-actions"><button data-action="authorize" data-id="${account.id}" ${state.queue.running ? 'disabled' : ''}>授权 ↗</button><button data-action="detail" data-id="${account.id}">详情</button></div></td></tr>`).join('');
   for (const id of ['check-button', 'authorize-button', 'delete-button']) $(`#${id}`).disabled = !selected.size || state.queue.running;
   $('#excel-button').disabled = !selected.size || excelExporting;
   $('#export-button').disabled = !accounts.some(account => selected.has(account.id) && account.exportable);
@@ -117,10 +138,16 @@ $('#account-rows').onclick = event => {
     $('#detail-dialog').showModal();
   }
 };
-$('.tabs').onclick = event => {
+$('#status-filters').onclick = event => {
   const button = event.target.closest('button[data-filter]');
   if (!button) return;
   filter = button.dataset.filter;
+  render();
+};
+$('#plan-filters').onclick = event => {
+  const button = event.target.closest('button[data-plan]');
+  if (!button) return;
+  planFilter = button.dataset.plan;
   render();
 };
 $('#search').oninput = render;
