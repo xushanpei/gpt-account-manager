@@ -4,7 +4,7 @@ const selected = new Set();
 let filter = 'all';
 let toastTimer;
 let excelExporting = false;
-const statuses = { pending: '待授权', needs_auth: '需要授权', authorizing: '授权处理中', ready: '会话就绪', error: '连接异常' };
+const statuses = { pending: '未授权', needs_auth: '需要重新授权', authorizing: '授权处理中', ready: '会话就绪', error: '连接异常' };
 const phoneLabels = { verified: '已验证', unverified: '未验证', bound: '已关联', unknown: '未知' };
 function escape(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
@@ -17,7 +17,7 @@ async function api(route, data) {
 function visibleAccounts() {
   const search = $('#search').value.trim().toLowerCase();
   return state.accounts.filter(account => {
-    const matches = filter === 'all' || (filter === 'pending' ? ['pending', 'needs_auth', 'authorizing'].includes(account.status) : account.status === filter);
+    const matches = filter === 'all' || account.status === filter;
     return matches && account.email.includes(search);
   });
 }
@@ -32,7 +32,16 @@ function render() {
   $('#errors').textContent = accounts.filter(account => account.status === 'error').length;
   $('#nav-count').textContent = accounts.length;
   $('#heading-count').textContent = accounts.length;
-  $('#selection-text').textContent = `已选择 ${selected.size} 个账号`;
+  const visibleIds = new Set(visible.map(account => account.id));
+  const hiddenSelected = accounts.filter(account => selected.has(account.id) && !visibleIds.has(account.id)).length;
+  $('#selection-text').textContent = `已选择 ${selected.size} 个账号${hiddenSelected ? `（含 ${hiddenSelected} 个筛选外账号）` : ''}`;
+  for (const button of document.querySelectorAll('.tabs button')) {
+    const value = button.dataset.filter;
+    const count = value === 'all' ? accounts.length : accounts.filter(account => account.status === value).length;
+    button.querySelector('.filter-count').textContent = count;
+    button.classList.toggle('selected', value === filter);
+    button.setAttribute('aria-pressed', String(value === filter));
+  }
   $('#table-count').textContent = `显示 ${visible.length} / ${accounts.length} 个账号`;
   $('#select-all').checked = visible.length > 0 && visible.every(account => selected.has(account.id));
   $('#select-all').indeterminate = visible.some(account => selected.has(account.id)) && !$('#select-all').checked;
@@ -109,9 +118,9 @@ $('#account-rows').onclick = event => {
   }
 };
 $('.tabs').onclick = event => {
-  if (!event.target.dataset.filter) return;
-  filter = event.target.dataset.filter;
-  document.querySelectorAll('.tabs button').forEach(button => button.classList.toggle('selected', button.dataset.filter === filter));
+  const button = event.target.closest('button[data-filter]');
+  if (!button) return;
+  filter = button.dataset.filter;
   render();
 };
 $('#search').oninput = render;
