@@ -1,0 +1,6 @@
+HTTP OAuth implementation adapted from boji1334/reauth-web (MIT).
+https://github.com/boji1334/reauth-web
+Pinned source commit db8251817fd1baefc83c14c851135fb6078bc001.
+Selected TOTP and HTTP/OAuth client modules retained.
+Local integration adds stdin/stdout bridge, cancellation, encrypted persistence,
+account identity matching, ChatGPT web callback validation, and raw web session exports.
